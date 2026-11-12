@@ -1,6 +1,6 @@
 # OJTracker
 
-为每位用户分配独立的 128 位随机 ID。用户可以绑定 Codeforces、AtCoder 和牛客 账号，每个平台各一个。查询读取 SQLite 中最近一次成功更新的快照。
+OJTracker 是一款使用 Go 开发的算法竞赛账号管理与追踪服务。用户可将 Codeforces、AtCoder、牛客等平台的账号关联至同一用户 ID，并通过 REST API 查询各平台的竞赛资料与评分。服务支持定时更新和按需刷新。
 
 ## 运行
 
