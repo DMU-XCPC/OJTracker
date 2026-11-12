@@ -1,0 +1,19 @@
+# Go build and test output
+/ojtracker
+/ojtracker.exe
+/bin/
+*.test
+coverage.out
+
+# Local SQLite data
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+
+# IDE, OS and local environment
+.idea/
+.DS_Store
+.env
+.env.*
+!.env.example
