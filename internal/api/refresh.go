@@ -1,11 +1,15 @@
 package api
 
-import "net/http"
+import (
+	"net/http"
+
+	"ojtracker/internal/sqlite"
+)
 
 func (s *Handler) refreshUser(w http.ResponseWriter, r *http.Request) {
 	// 先检查用户存在性，区分未知用户和没有绑定的用户。
 	uid := r.PathValue("id")
-	if e := userExists(s.db.WithContext(r.Context()), uid); e != nil {
+	if e := sqlite.RequireUser(s.db.WithContext(r.Context()), uid); e != nil {
 		dbError(w, e)
 		return
 	}

@@ -36,14 +36,8 @@ func NewUpdater(db *gorm.DB, clients platform.Clients, spacing time.Duration) *U
 
 // Refresh 在 uid 为空时扫描全部绑定；指定 uid 时只刷新该用户。
 func (s *Updater) Refresh(ctx context.Context, uid string) (map[string]string, error) {
-	// 由用户 ID 决定查询单个用户还是扫描全部绑定。
-	query := s.db.WithContext(ctx).Select("user_id", "platform", "handle", "revision")
-	if uid != "" {
-		query = query.Where("user_id = ?", uid)
-	}
-	// 先读取绑定版本并释放连接，再开始上游请求。
-	var bindings []sqlite.Account
-	if err := query.Order("user_id, platform").Find(&bindings).Error; err != nil {
+	bindings, err := sqlite.ListRefreshBindings(s.db.WithContext(ctx), uid)
+	if err != nil {
 		return nil, err
 	}
 	// 逐个更新；数据库故障终止本轮，单个绑定失败后继续处理其他项。
@@ -120,12 +114,11 @@ func (s *Updater) update(ctx context.Context, b sqlite.Account) (string, error) 
 		changes["updated_at"] = time.Now().UTC().Format(time.RFC3339Nano)
 		changes["last_error"] = nil
 	}
-	result := s.db.WithContext(ctx).Model(&sqlite.Account{}).
-		Where("user_id = ? AND platform = ? AND revision = ?", b.UserID, b.Platform, b.Revision).Updates(changes)
-	if result.Error != nil {
-		return "", result.Error
+	updated, err := sqlite.UpdateBindingSnapshot(s.db.WithContext(ctx), b, changes)
+	if err != nil {
+		return "", err
 	}
-	if result.RowsAffected == 0 {
+	if !updated {
 		return "binding changed", nil
 	}
 	return msg, nil

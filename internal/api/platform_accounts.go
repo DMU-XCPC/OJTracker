@@ -6,7 +6,6 @@ import (
 	"regexp"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	"ojtracker/internal/sqlite"
 	"ojtracker/platform/nowcoder"
@@ -27,11 +26,8 @@ func (s *Handler) account(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "unknown platform")
 		return
 	}
-	// 从用户表左连接绑定，一次查询区分未知用户和未绑定平台。
-	var a Account
-	err := s.db.WithContext(r.Context()).Model(&User{}).Select("accounts.*").
-		Joins("LEFT JOIN accounts ON accounts.user_id = users.id AND accounts.platform = ?", p).
-		Where("users.id = ?", r.PathValue("id")).Take(&a).Error
+	db := s.db.WithContext(r.Context())
+	account, err := sqlite.FindAccount(db, r.PathValue("id"), p)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		fail(w, 404, "user_not_found")
 		return
@@ -40,11 +36,11 @@ func (s *Handler) account(w http.ResponseWriter, r *http.Request) {
 		dbError(w, err)
 		return
 	}
-	if a.Handle == "" {
+	if account.Handle == "" {
 		fail(w, 404, "platform_not_bound")
 		return
 	}
-	respond(w, 200, a)
+	respond(w, 200, account)
 }
 
 func (s *Handler) bind(w http.ResponseWriter, r *http.Request) {
@@ -69,17 +65,9 @@ func (s *Handler) bind(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 相同账号重复绑定时保留快照。更换账号时同时清空快照并更新绑定版本。
-	err := s.db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := userExists(tx, uid); err != nil {
-			return err
-		}
-		binding := Account{UserID: uid, Platform: p, Handle: in.Handle, Revision: id()}
-		return tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "user_id"}, {Name: "platform"}},
-			DoUpdates: clause.AssignmentColumns([]string{"handle", "revision", "profile", "updated_at", "last_error"}),
-			Where:     clause.Where{Exprs: []clause.Expression{clause.Neq{Column: clause.Column{Table: "accounts", Name: "handle"}, Value: clause.Column{Table: "excluded", Name: "handle"}}}},
-		}).Create(&binding).Error
-	})
+	binding := Account{UserID: uid, Platform: p, Handle: in.Handle, Revision: id()}
+	db := s.db.WithContext(r.Context())
+	err := sqlite.BindAccount(db, binding)
 	if err != nil {
 		dbError(w, err)
 		return
@@ -91,7 +79,8 @@ func (s *Handler) bind(w http.ResponseWriter, r *http.Request) {
 func (s *Handler) unbind(w http.ResponseWriter, r *http.Request) {
 	// 用用户 ID 和平台共同限定删除范围，未匹配时返回 404。
 	uid := r.PathValue("id")
-	err := requireRow(s.db.WithContext(r.Context()).Where("user_id = ? AND platform = ?", uid, r.PathValue("platform")).Delete(&Account{}))
+	db := s.db.WithContext(r.Context())
+	err := sqlite.UnbindAccount(db, uid, r.PathValue("platform"))
 	if err != nil {
 		dbError(w, err)
 		return

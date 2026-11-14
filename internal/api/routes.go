@@ -19,8 +19,8 @@ func NewHandler(db *gorm.DB, updater *refresh.Updater) http.Handler {
 	s := &Handler{db: db, updater: updater}
 	// 注册用户管理与详情路由。
 	m := http.NewServeMux()
-	m.HandleFunc("POST /users", s.saveUser)
-	m.HandleFunc("PUT /users/{id}", s.saveUser)
+	m.HandleFunc("POST /users", s.createUser)
+	m.HandleFunc("PUT /users/{id}", s.renameUser)
 	m.HandleFunc("GET /users", s.list)
 	m.HandleFunc("GET /users/{id}", s.detail)
 	m.HandleFunc("DELETE /users/{id}", s.deleteUser)
