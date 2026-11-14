@@ -28,7 +28,6 @@ id='0123456789abcdef0123456789abcdef'
 
 - [Codeforces](platforms/codeforces.md)
 - [AtCoder](platforms/atcoder.md)
-- [牛客竞赛](platforms/nowcoder.md)
 
 同一用户在每个平台可绑定一个账号。重复绑定相同账号会保留快照，更换账号会清空旧快照。
 

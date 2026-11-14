@@ -12,7 +12,6 @@ import (
 	"ojtracker/platform"
 	"ojtracker/platform/atcoder"
 	"ojtracker/platform/codeforces"
-	"ojtracker/platform/nowcoder"
 )
 
 // Updater 持有定时和手动刷新共享的客户端、请求令牌与间隔。
@@ -88,13 +87,6 @@ func (s *Updater) update(ctx context.Context, b sqlite.Account) (string, error) 
 		// 用 AtCoder 计分摘要类型生成快照。
 		var snapshot atcoder.Snapshot
 		snapshot, e = s.clients.AtCoder.Fetch(ctx, b.Handle)
-		if e == nil {
-			raw, e = json.Marshal(snapshot)
-		}
-	case "nowcoder":
-		// 将公开竞赛主页解析为牛客专属快照。
-		var snapshot nowcoder.Snapshot
-		snapshot, e = s.clients.Nowcoder.Fetch(ctx, b.Handle)
 		if e == nil {
 			raw, e = json.Marshal(snapshot)
 		}

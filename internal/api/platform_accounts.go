@@ -8,7 +8,6 @@ import (
 	"gorm.io/gorm"
 
 	"ojtracker/internal/sqlite"
-	"ojtracker/platform/nowcoder"
 )
 
 // Account 包含绑定信息和最近一次成功抓取的平台快照。
@@ -17,7 +16,7 @@ type Account = sqlite.Account
 var handlePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
 
 // supported 校验服务已接入的平台标识。
-func supported(p string) bool { return p == "codeforces" || p == "atcoder" || p == "nowcoder" }
+func supported(p string) bool { return p == "codeforces" || p == "atcoder" }
 
 func (s *Handler) account(w http.ResponseWriter, r *http.Request) {
 	// 在查询数据库前检查平台名。
@@ -53,11 +52,6 @@ func (s *Handler) bind(w http.ResponseWriter, r *http.Request) {
 	// 解析账号名，校验长度、字符范围并排除路径点段。
 	var in struct{ Handle string }
 	if !body(w, r, &in) {
-		return
-	}
-	// 牛客竞赛主页使用数字 UID 作为绑定标识。
-	if p == "nowcoder" && !nowcoder.ValidUID(in.Handle) {
-		fail(w, 400, "invalid nowcoder UID")
 		return
 	}
 	if !handlePattern.MatchString(in.Handle) || in.Handle == "." || in.Handle == ".." {

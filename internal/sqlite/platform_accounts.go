@@ -38,7 +38,8 @@ func UnbindAccount(db *gorm.DB, userID, platform string) error {
 
 // ListRefreshBindings 按固定顺序读取本轮需要更新的绑定及版本。
 func ListRefreshBindings(db *gorm.DB, userID string) ([]Account, error) {
-	query := db.Select("user_id", "platform", "handle", "revision")
+	query := db.Select("user_id", "platform", "handle", "revision").
+		Where("platform IN ?", []string{"codeforces", "atcoder"})
 	if userID != "" {
 		query = query.Where("user_id = ?", userID)
 	}

@@ -49,12 +49,6 @@ func TestUserLifecycle(t *testing.T) {
 		case "atcoder.jp":
 			// 返回计分与非计分场次，覆盖 AtCoder 筛选逻辑。
 			raw = `[{"IsRated":true,"NewRating":3500,"EndTime":"2020-01-01T00:00:00Z"},{"IsRated":false,"NewRating":0}]`
-		case "ac.nowcoder.com":
-			// 校验 UID 路径，并用精简竞赛主页验证快照写入。
-			if r.URL.Path != "/acm/contest/profile/123" {
-				t.Fatal(r.URL)
-			}
-			raw = `<a class="coder-name rate-score4">演示</a><script>window.curUser.id = "123";</script><div class="state-num">1800</div><span>Rating</span><div class="state-num">42</div><span>Rating排名</span>`
 		default:
 			// 收到未知目标主机时报告错误。
 			t.Fatal(r.URL)
@@ -93,21 +87,18 @@ func TestUserLifecycle(t *testing.T) {
 	for _, p := range []string{"atcoder", "codeforces"} {
 		call("PUT", path+"/accounts/"+p, `{"handle":"tourist"}`, 204)
 	}
-	// 牛客绑定使用数字 UID，昵称应被拒绝。
-	call("PUT", path+"/accounts/nowcoder", `{"handle":"demo"}`, 400)
-	call("PUT", path+"/accounts/nowcoder", `{"handle":"123"}`, 204)
 	// 启动后台调度器并记录其退出通知。
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { updater.Schedule(ctx, time.Hour); close(done) }()
-	// 限时等待三份快照入库，超时先停止任务再报告失败。
+	// 限时等待两份快照入库，超时先停止任务再报告失败。
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		var count int64
 		if e = db.Model(&sqlite.Account{}).Where("profile IS NOT NULL").Count(&count).Error; e != nil {
 			t.Fatal(e)
 		}
-		if count == 3 {
+		if count == 2 {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -122,7 +113,7 @@ func TestUserLifecycle(t *testing.T) {
 	<-done
 	call("POST", path+"/refresh", "", 200)
 	// 检查各平台的专属字段，排除旧版 details 包装。
-	for platform, field := range map[string]string{"codeforces": "friendOfCount", "atcoder": "ratedContests", "nowcoder": `"ratingRank":42`} {
+	for platform, field := range map[string]string{"codeforces": "friendOfCount", "atcoder": "ratedContests"} {
 		data := call("GET", path+"/accounts/"+platform, "", 200)
 		if !strings.Contains(data, field) || strings.Contains(data, `"details"`) {
 			t.Fatal(data)

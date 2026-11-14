@@ -1,6 +1,6 @@
 # OJTracker
 
-OJTracker 是一款使用 Go 开发的算法竞赛账号管理与追踪服务。用户可将 Codeforces、AtCoder、牛客等平台的账号关联至同一用户 ID，并通过 REST API 查询各平台的竞赛资料与评分。服务支持定时更新和按需刷新。
+OJTracker 是一款使用 Go 开发的算法竞赛账号管理与追踪服务。用户可将 Codeforces、AtCoder 等平台的账号关联至同一用户 ID，并通过 REST API 查询各平台的竞赛资料与评分。服务支持定时更新和按需刷新。
 
 ## 运行
 
@@ -31,7 +31,7 @@ go run . -config service.cfg
 |DELETE|/users/{id}/accounts/{platform}|解绑一个平台|204|
 |POST|/users/{id}/refresh|同步更新该用户所有绑定|200，返回 {"errors":{}}|
 
-platform 可取 codeforces、atcoder、nowcoder。牛客使用数字 UID 绑定，快照包含 uid、nickname、rating 和 ratingRank。首次绑定后可直接调用 refresh，否则等待下次定时扫描。重复绑定相同账号保留快照，更换账号会清空旧快照。查询结果中的 accounts 包含 platform、handle、profile、updated_at 和 last_error。未成功抓取时 profile 和 updated_at 为 null。刷新中某个平台失败时，其他平台继续执行，接口返回 502 和按用户 ID/平台标识的错误。失败的平台保留最近成功的数据和更新时间。
+platform 可取 codeforces、atcoder。首次绑定后可直接调用 refresh，否则等待下次定时扫描。重复绑定相同账号保留快照，更换账号会清空旧快照。查询结果中的 accounts 包含 platform、handle、profile、updated_at 和 last_error。未成功抓取时 profile 和 updated_at 为 null。刷新中某个平台失败时，其他平台继续执行，接口返回 502 和按用户 ID/平台标识的错误。失败的平台保留最近成功的数据和更新时间。
 
 ```sh
 base=http://127.0.0.1:8080
