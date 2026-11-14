@@ -7,13 +7,13 @@
 ```sh
 base=http://127.0.0.1:8080
 curl -i -X POST "$base/users" -H 'Content-Type: application/json' \
-  -d '{"name":"小林"}'
+  -d '{"name":"Dust"}'
 ```
 
 响应为 `201 Created`，响应体如下。
 
 ```json
-{"id":"0123456789abcdef0123456789abcdef","name":"小林"}
+{"id":"0123456789abcdef0123456789abcdef","name":"Dust"}
 ```
 
 将实际返回的 ID 保存到 shell 变量，供后续命令使用。
