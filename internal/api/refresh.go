@@ -5,7 +5,7 @@ import "net/http"
 func (s *Handler) refreshUser(w http.ResponseWriter, r *http.Request) {
 	// 先检查用户存在性，区分未知用户和没有绑定的用户。
 	uid := r.PathValue("id")
-	if e := s.exists(uid); e != nil {
+	if e := userExists(s.db.WithContext(r.Context()), uid); e != nil {
 		dbError(w, e)
 		return
 	}

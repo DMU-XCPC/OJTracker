@@ -1,12 +1,13 @@
 package api
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
 	"log"
 	"net/http"
+
+	"gorm.io/gorm"
 )
 
 func respond(w http.ResponseWriter, status int, data any) {
@@ -26,7 +27,7 @@ func fail(w http.ResponseWriter, status int, msg string) {
 
 func dbError(w http.ResponseWriter, e error) {
 	// 将未匹配记录映射为资源不存在。
-	if errors.Is(e, sql.ErrNoRows) {
+	if errors.Is(e, gorm.ErrRecordNotFound) {
 		fail(w, 404, "resource not found")
 		return
 	}

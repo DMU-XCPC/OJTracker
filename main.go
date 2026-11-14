@@ -30,7 +30,11 @@ func main() {
 	if e != nil {
 		log.Fatal(e)
 	}
-	defer db.Close()
+	defer func() {
+		if err := sqlite.Close(db); err != nil {
+			log.Printf("close database: %v", err)
+		}
+	}()
 
 	// 创建服务并让定时任务监听系统退出信号。
 	clients := platform.NewClients(&http.Client{Timeout: cfg.Timeout})

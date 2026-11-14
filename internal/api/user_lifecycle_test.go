@@ -7,14 +7,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
-	"strings"
-	"testing"
-	"time"
 	"ojtracker/internal/api"
 	"ojtracker/internal/refresh"
 	"ojtracker/internal/sqlite"
 	"ojtracker/platform"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
 )
 
 type transport func(*http.Request) (*http.Response, error)
@@ -27,7 +27,11 @@ func TestUserLifecycle(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer db.Close()
+	defer func() {
+		if err := sqlite.Close(db); err != nil {
+			t.Error(err)
+		}
+	}()
 	// 用可切换的模拟上游覆盖在线与断网场景。
 	offline := false
 	c := &http.Client{Transport: transport(func(r *http.Request) (*http.Response, error) {
@@ -99,8 +103,8 @@ func TestUserLifecycle(t *testing.T) {
 	// 限时等待三份快照入库，超时先停止任务再报告失败。
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		var count int
-		if e = db.QueryRow("SELECT count(*) FROM accounts WHERE profile IS NOT NULL").Scan(&count); e != nil {
+		var count int64
+		if e = db.Model(&sqlite.Account{}).Where("profile IS NOT NULL").Count(&count).Error; e != nil {
 			t.Fatal(e)
 		}
 		if count == 3 {
@@ -140,8 +144,8 @@ func TestUserLifecycle(t *testing.T) {
 	call("GET", path, "", 404)
 	call("GET", "/users/"+v.ID, "", 200)
 	// 直接核对绑定表，确认级联删除已生效。
-	var count int
-	if e = db.QueryRow("SELECT count(*) FROM accounts").Scan(&count); e != nil || count != 0 {
+	var count int64
+	if e = db.Model(&sqlite.Account{}).Count(&count).Error; e != nil || count != 0 {
 		t.Fatal(count, e)
 	}
 }

@@ -2,12 +2,13 @@ package refresh
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
-
 	"time"
 
+	"gorm.io/gorm"
+
+	"ojtracker/internal/sqlite"
 	"ojtracker/platform"
 	"ojtracker/platform/atcoder"
 	"ojtracker/platform/codeforces"
@@ -16,14 +17,14 @@ import (
 
 // Updater 持有定时和手动刷新共享的客户端、请求令牌与间隔。
 type Updater struct {
-	db      *sql.DB
+	db      *gorm.DB
 	clients platform.Clients
 	gate    chan struct{}
 	next    time.Time
 	spacing time.Duration
 }
 
-func NewUpdater(db *sql.DB, clients platform.Clients, spacing time.Duration) *Updater {
+func NewUpdater(db *gorm.DB, clients platform.Clients, spacing time.Duration) *Updater {
 	// 容量为一的通道协调手动刷新与定时任务。
 	return &Updater{
 		db:      db,
@@ -33,42 +34,17 @@ func NewUpdater(db *sql.DB, clients platform.Clients, spacing time.Duration) *Up
 	}
 }
 
-type binding struct {
-	user     string
-	platform string
-	handle   string
-	revision string
-}
-
 // Refresh 在 uid 为空时扫描全部绑定；指定 uid 时只刷新该用户。
 func (s *Updater) Refresh(ctx context.Context, uid string) (map[string]string, error) {
 	// 由用户 ID 决定查询单个用户还是扫描全部绑定。
-	q := "SELECT user_id,platform,handle,revision FROM accounts"
-	var args []any
+	query := s.db.WithContext(ctx).Select("user_id", "platform", "handle", "revision")
 	if uid != "" {
-		q += " WHERE user_id=?"
-		args = append(args, uid)
+		query = query.Where("user_id = ?", uid)
 	}
-	// 固定用户和平台的排序，使抓取顺序稳定。
-	rows, e := s.db.QueryContext(ctx, q+" ORDER BY user_id,platform", args...)
-	if e != nil {
-		return nil, e
-	}
-	// 保存当前绑定版本，以便抓取完成后校验写入目标。
-	var bindings []binding
-	for rows.Next() {
-		var b binding
-		if e = rows.Scan(&b.user, &b.platform, &b.handle, &b.revision); e != nil {
-			rows.Close()
-			return nil, e
-		}
-		bindings = append(bindings, b)
-	}
-	// 抓取前释放查询持有的连接，后续更新需要使用同一个单连接池。
-	e = rows.Err()
-	rows.Close()
-	if e != nil {
-		return nil, e
+	// 先读取绑定版本并释放连接，再开始上游请求。
+	var bindings []sqlite.Account
+	if err := query.Order("user_id, platform").Find(&bindings).Error; err != nil {
+		return nil, err
 	}
 	// 逐个更新；数据库故障终止本轮，单个绑定失败后继续处理其他项。
 	out := map[string]string{}
@@ -79,13 +55,13 @@ func (s *Updater) Refresh(ctx context.Context, uid string) (map[string]string, e
 		}
 		// 以用户 ID 和平台组成错误键，便于定位失败项。
 		if msg != "" {
-			out[b.user+"/"+b.platform] = msg
+			out[b.UserID+"/"+b.Platform] = msg
 		}
 	}
 	return out, nil
 }
 
-func (s *Updater) update(ctx context.Context, b binding) (string, error) {
+func (s *Updater) update(ctx context.Context, b sqlite.Account) (string, error) {
 	// 等待全局刷新令牌，调用方取消时提前退出。
 	select {
 	case s.gate <- struct{}{}:
@@ -106,58 +82,50 @@ func (s *Updater) update(ctx context.Context, b binding) (string, error) {
 	s.next = time.Now().Add(s.spacing)
 	var raw []byte
 	var e error
-	switch b.platform {
+	switch b.Platform {
 	case "codeforces":
 		// 用 Codeforces 用户资料类型解码，再编码为快照。
 		var u codeforces.User
-		u, e = s.clients.Codeforces.Fetch(ctx, b.handle)
+		u, e = s.clients.Codeforces.Fetch(ctx, b.Handle)
 		if e == nil {
 			raw, e = json.Marshal(u)
 		}
 	case "atcoder":
 		// 用 AtCoder 计分摘要类型生成快照。
 		var snapshot atcoder.Snapshot
-		snapshot, e = s.clients.AtCoder.Fetch(ctx, b.handle)
+		snapshot, e = s.clients.AtCoder.Fetch(ctx, b.Handle)
 		if e == nil {
 			raw, e = json.Marshal(snapshot)
 		}
 	case "nowcoder":
 		// 将公开竞赛主页解析为牛客专属快照。
 		var snapshot nowcoder.Snapshot
-		snapshot, e = s.clients.Nowcoder.Fetch(ctx, b.handle)
+		snapshot, e = s.clients.Nowcoder.Fetch(ctx, b.Handle)
 		if e == nil {
 			raw, e = json.Marshal(snapshot)
 		}
 	default:
 		// 数据库中的平台名没有对应适配器时终止本轮。
-		return "", fmt.Errorf("unknown stored platform %q", b.platform)
+		return "", fmt.Errorf("unknown stored platform %q", b.Platform)
 	}
 	// revision 限定写入时的绑定版本，避免迟到的响应覆盖新账号的数据。
-	var res sql.Result
 	msg := ""
+	changes := map[string]any{}
 	if e != nil {
+		// 失败只更新错误信息，保留最近成功的快照。
 		msg = e.Error()
-		// 抓取失败时保留上一次成功的快照和更新时间。
-		const recordFailure = `
- UPDATE accounts SET last_error = ?
- WHERE revision = ? AND user_id = ? AND platform = ?`
-		res, e = s.db.ExecContext(ctx, recordFailure, msg, b.revision, b.user, b.platform)
+		changes["last_error"] = msg
 	} else {
-		// 成功时一起替换快照和时间戳，并清除先前错误。
-		const saveSnapshot = `
- UPDATE accounts SET profile = ?, updated_at = ?, last_error = NULL
- WHERE revision = ? AND user_id = ? AND platform = ?`
-		updatedAt := time.Now().UTC().Format(time.RFC3339Nano)
-		res, e = s.db.ExecContext(ctx, saveSnapshot,
-			string(raw), updatedAt, b.revision, b.user, b.platform,
-		)
+		changes["profile"] = string(raw)
+		changes["updated_at"] = time.Now().UTC().Format(time.RFC3339Nano)
+		changes["last_error"] = nil
 	}
-	// 将写库错误与单个平台的抓取错误分别返回。
-	if e != nil {
-		return "", e
+	result := s.db.WithContext(ctx).Model(&sqlite.Account{}).
+		Where("user_id = ? AND platform = ? AND revision = ?", b.UserID, b.Platform, b.Revision).Updates(changes)
+	if result.Error != nil {
+		return "", result.Error
 	}
-	// 零行更新表示绑定已删除或已换绑，丢弃旧结果。
-	if n, _ := res.RowsAffected(); n == 0 {
+	if result.RowsAffected == 0 {
 		return "binding changed", nil
 	}
 	return msg, nil
